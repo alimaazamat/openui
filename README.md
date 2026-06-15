@@ -41,7 +41,7 @@ bunx @fallom/openui
 
 1. Run `openui` in your project directory
 2. Browser opens at `http://localhost:6969`
-3. Click "+" to spawn agents (Claude Code, OpenCode, or Ralph Loop)
+3. Click "+" to spawn agents (Claude Code, GitHub Copilot, OpenCode, or Ralph Loop)
 4. Click any node to open its terminal
 5. Drag nodes to organize, create categories to group them
 
@@ -128,7 +128,7 @@ claude --plugin-dir $(pwd)/claude-code-plugin
 ## Requirements
 
 - Bun 1.0+
-- One of: Claude Code, OpenCode, or Ralph Loop
+- One of: Claude Code, GitHub Copilot, OpenCode, or Ralph Loop
 
 ### Claude Code Plugin (Auto-installed)
 

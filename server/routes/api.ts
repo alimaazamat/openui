@@ -74,6 +74,14 @@ apiRoutes.get("/agents", (c) => {
       icon: "sparkles",
     },
     {
+      id: "copilot",
+      name: "GitHub Copilot",
+      command: "copilot",
+      description: "GitHub's official Copilot CLI coding agent",
+      color: "#6E7681",
+      icon: "github",
+    },
+    {
       id: "opencode",
       name: "OpenCode",
       command: "opencode",
