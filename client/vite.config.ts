@@ -10,10 +10,9 @@ export default defineConfig({
         target: "http://localhost:6968",
         changeOrigin: true,
       },
-      "/ws": {
-        target: "ws://localhost:6968",
-        ws: true,
-      },
+      // NOTE: /ws is intentionally not proxied. Vite's http-proxy cannot relay
+      // Bun.serve's WebSocket upgrade response, so the client connects directly
+      // to the backend in dev (see Terminal.tsx).
     },
   },
   build: {
