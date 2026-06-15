@@ -85,7 +85,13 @@ export function Terminal({ sessionId, color, nodeId }: TerminalProps) {
 
     // Connect WebSocket with small delay to allow session to be ready
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws?sessionId=${sessionId}`;
+    // In dev, Vite's proxy can't relay Bun's WebSocket upgrade response, so connect
+    // directly to the backend. In production (single-server) the backend serves the
+    // client itself, so the current host already points at the backend.
+    const wsHost = import.meta.env.DEV
+      ? `${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT ?? 6968}`
+      : window.location.host;
+    const wsUrl = `${protocol}//${wsHost}/ws?sessionId=${sessionId}`;
 
     let ws: WebSocket | null = null;
     let isFirstMessage = true;
