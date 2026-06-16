@@ -84,14 +84,17 @@ export function Terminal({ sessionId, color, nodeId }: TerminalProps) {
     fitAddonRef.current = fitAddon;
 
     // Connect WebSocket with small delay to allow session to be ready.
+    // Always mirror the page's protocol (ws for http, wss for https) so the
+    // browser never blocks the connection under its mixed-content policy.
     // In dev, Vite's proxy can't relay Bun's WebSocket upgrade response, so connect
-    // directly to the backend. The backend serves plain HTTP/WebSocket with no TLS,
-    // so always use ws:// even when the dev page is served over HTTPS. In production
-    // (single-server) the backend serves the client itself, so mirror the page's
-    // protocol and reuse the current host.
+    // directly to the backend's host/port; the default dev page is served over plain
+    // HTTP, yielding ws://. (Serving the dev page over HTTPS requires the backend to
+    // be reachable over TLS, since the browser forbids ws:// from an https:// origin.)
+    // In production (single-server) the backend serves the client itself, so reuse
+    // the current host.
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = import.meta.env.DEV
-      ? `ws://${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT ?? 6968}/ws?sessionId=${sessionId}`
+      ? `${protocol}//${window.location.hostname}:${import.meta.env.VITE_BACKEND_PORT ?? 6968}/ws?sessionId=${sessionId}`
       : `${protocol}//${window.location.host}/ws?sessionId=${sessionId}`;
 
     let ws: WebSocket | null = null;
