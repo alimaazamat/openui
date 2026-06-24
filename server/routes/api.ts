@@ -218,6 +218,63 @@ apiRoutes.post("/sessions", async (c) => {
   });
 });
 
+// Upload an image (e.g. pasted/dropped into the terminal) and save it to the
+// session's working directory so the agent can reference it by path.
+apiRoutes.post("/sessions/:sessionId/upload", async (c) => {
+  const sessionId = c.req.param("sessionId");
+  const session = sessions.get(sessionId);
+  if (!session) return c.json({ error: "Session not found" }, 404);
+
+  const { mkdirSync, writeFileSync } = await import("fs");
+  const { join } = await import("path");
+
+  const body = await c.req.json().catch(() => null);
+  const dataUrl: string | undefined = body?.dataUrl;
+  if (!dataUrl || typeof dataUrl !== "string") {
+    return c.json({ error: "Missing dataUrl" }, 400);
+  }
+
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    return c.json({ error: "Invalid data URL" }, 400);
+  }
+
+  const mime = match[1];
+  const base64 = match[2];
+  const extMap: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/bmp": "bmp",
+  };
+  const ext = extMap[mime];
+  if (!ext) {
+    return c.json({ error: `Unsupported image type: ${mime}` }, 400);
+  }
+
+  // Cap at ~25MB to avoid runaway payloads.
+  const buffer = Buffer.from(base64, "base64");
+  if (buffer.byteLength > 25 * 1024 * 1024) {
+    return c.json({ error: "Image too large (max 25MB)" }, 413);
+  }
+
+  try {
+    const uploadDir = join(session.cwd, ".openui-uploads");
+    mkdirSync(uploadDir, { recursive: true });
+    const filename = `pasted-${Date.now()}.${ext}`;
+    const filePath = join(uploadDir, filename);
+    writeFileSync(filePath, buffer);
+    log(`\x1b[38;5;141m[upload]\x1b[0m Saved image to ${filePath}`);
+    return c.json({ path: filePath, filename });
+  } catch (err) {
+    logError(`\x1b[38;5;141m[upload]\x1b[0m Failed to save image:`, err);
+    return c.json({ error: "Failed to save image" }, 500);
+  }
+});
+
 apiRoutes.post("/sessions/:sessionId/restart", async (c) => {
   const sessionId = c.req.param("sessionId");
   const session = sessions.get(sessionId);

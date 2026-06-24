@@ -171,10 +171,88 @@ export function Terminal({ sessionId, color, nodeId }: TerminalProps) {
 
     resizeObserver.observe(terminalRef.current);
 
+    // --- Image paste / drag-and-drop support ---
+    // The box is a text-only xterm terminal, so raw images can't be entered.
+    // Instead we capture pasted/dropped images, upload them to the session's
+    // working directory, and type the saved file path into the terminal so the
+    // agent can reference it.
+    const container = terminalRef.current;
+
+    const quotePath = (p: string) => (/\s/.test(p) ? `'${p.replace(/'/g, "'\\''")}'` : p);
+
+    const insertPath = (path: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "input", data: `${quotePath(path)} ` }));
+      }
+    };
+
+    const uploadImage = async (file: File) => {
+      try {
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        const res = await fetch(`/api/sessions/${sessionId}/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl }),
+        });
+        if (!res.ok) {
+          term.write(`\r\n\x1b[31m[openui] image upload failed\x1b[0m\r\n`);
+          return;
+        }
+        const { path } = await res.json();
+        if (path) insertPath(path);
+      } catch {
+        term.write(`\r\n\x1b[31m[openui] image upload error\x1b[0m\r\n`);
+      }
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            e.stopPropagation();
+            void uploadImage(file);
+            return;
+          }
+        }
+      }
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+    };
+
+    const onDrop = (e: DragEvent) => {
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+      const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      if (images.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        images.forEach((f) => void uploadImage(f));
+      }
+    };
+
+    container.addEventListener("paste", onPaste, true);
+    container.addEventListener("dragover", onDragOver);
+    container.addEventListener("drop", onDrop);
+
     return () => {
       mountedRef.current = false;
       clearTimeout(connectTimeout);
       resizeObserver.disconnect();
+      container.removeEventListener("paste", onPaste, true);
+      container.removeEventListener("dragover", onDragOver);
+      container.removeEventListener("drop", onDrop);
       ws?.close();
       term.dispose();
     };
