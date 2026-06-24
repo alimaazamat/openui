@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -68,6 +68,62 @@ export function Sidebar() {
   const [editIcon, setEditIcon] = useState("");
   const [terminalKey, setTerminalKey] = useState(0);
 
+  // Resizable side panel width (persisted)
+  const MIN_PANEL_WIDTH = 360;
+  const DEFAULT_PANEL_WIDTH = 512; // matches previous max-w-lg
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem("openui:sidebarWidth") : null;
+    const parsed = stored ? parseInt(stored, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : DEFAULT_PANEL_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const maxPanelWidth = () => (typeof window !== "undefined" ? Math.round(window.innerWidth * 0.9) : 1200);
+
+  const clampWidth = useCallback((width: number) => {
+    return Math.max(MIN_PANEL_WIDTH, Math.min(width, maxPanelWidth()));
+  }, []);
+
+  // Re-clamp on window resize so the panel never exceeds the viewport
+  useEffect(() => {
+    const onWindowResize = () => setPanelWidth((w) => clampWidth(w));
+    window.addEventListener("resize", onWindowResize);
+    return () => window.removeEventListener("resize", onWindowResize);
+  }, [clampWidth]);
+
+  // Persist width
+  useEffect(() => {
+    window.localStorage.setItem("openui:sidebarWidth", String(panelWidth));
+  }, [panelWidth]);
+
+  const resizingRef = useRef(false);
+
+  const startResize = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    setIsResizing(true);
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!resizingRef.current) return;
+      // Panel is anchored to the right edge; width grows as the cursor moves left.
+      setPanelWidth(clampWidth(window.innerWidth - ev.clientX));
+    };
+
+    const onPointerUp = () => {
+      resizingRef.current = false;
+      setIsResizing(false);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }, [clampWidth]);
+
   // Reset edit state when session changes (but NOT when nodes change)
   useEffect(() => {
     if (session) {
@@ -107,9 +163,24 @@ export function Sidebar() {
           initial={{ x: "100%", opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: "100%", opacity: 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 40 }}
-          className="fixed right-0 top-14 bottom-0 w-full max-w-lg z-50 flex flex-col bg-canvas-dark border-l border-border"
+          transition={isResizing ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 40 }}
+          style={{ width: panelWidth, maxWidth: "90vw" }}
+          className="fixed right-0 top-14 bottom-0 z-50 flex flex-col bg-canvas-dark border-l border-border"
         >
+          {/* Resize handle */}
+          <div
+            onPointerDown={startResize}
+            onDoubleClick={() => setPanelWidth(DEFAULT_PANEL_WIDTH)}
+            title="Drag to resize • double-click to reset"
+            className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 cursor-col-resize z-10 group"
+          >
+            <div
+              className={`w-full h-full transition-colors ${
+                isResizing ? "bg-blue-500/60" : "bg-transparent group-hover:bg-blue-500/40"
+              }`}
+            />
+          </div>
+
           {/* Header */}
           <div className="flex-shrink-0 px-4 py-3 border-b border-border">
             <div className="flex items-center gap-3">
