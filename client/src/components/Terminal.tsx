@@ -80,6 +80,72 @@ export function Terminal({ sessionId, color, nodeId }: TerminalProps) {
     
     setTimeout(() => fitAddon.fit(), 50);
 
+    // Keep scrolling working while chatting with interactive agent CLIs.
+    // These CLIs (Copilot CLI, Claude Code, …) render in the alternate screen
+    // buffer and turn on mouse tracking, so they scroll their own view in
+    // response to mouse-wheel events rather than letting the terminal scroll a
+    // scrollback buffer (the alt buffer has none).
+    //
+    // xterm does forward the wheel to the app as a mouse event, but it runs the
+    // delta through Viewport.getLinesScrolled() first and drops the event when
+    // that rounds to 0 lines — which happens constantly for trackpad pixel
+    // deltas — so scrolling feels stuck. To make it reliable we accumulate the
+    // delta ourselves and emit the SGR mouse-wheel sequence (button 64 = up,
+    // 65 = down) directly, one event per line of movement.
+    //
+    // In the normal buffer (an agent rendering inline) real scrollback exists,
+    // so we just scroll it ourselves. When the mouse isn't grabbed we let xterm
+    // handle the wheel normally (native scrollback scrolling / selection).
+    let wheelRemainder = 0;
+    const wheelLines = (e: WheelEvent): number => {
+      if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY;
+      if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * term.rows;
+      const fontSize = term.options.fontSize ?? 12;
+      const lineHeight = typeof term.options.lineHeight === "number" ? term.options.lineHeight : 1.4;
+      wheelRemainder += e.deltaY / (fontSize * lineHeight);
+      const lines = Math.trunc(wheelRemainder);
+      wheelRemainder -= lines;
+      return lines;
+    };
+
+    // Map the wheel event's pixel position to a 1-based terminal cell so the
+    // synthetic mouse event carries sensible coordinates.
+    const wheelCell = (e: WheelEvent): { col: number; row: number } => {
+      const el = term.element;
+      if (!el) return { col: 1, row: 1 };
+      const rect = el.getBoundingClientRect();
+      const col = Math.floor(((e.clientX - rect.left) / rect.width) * term.cols) + 1;
+      const row = Math.floor(((e.clientY - rect.top) / rect.height) * term.rows) + 1;
+      return {
+        col: Math.min(term.cols, Math.max(1, col)),
+        row: Math.min(term.rows, Math.max(1, row)),
+      };
+    };
+
+    term.attachCustomWheelEventHandler((e) => {
+      const mouseGrabbed = term.element?.classList.contains("enable-mouse-events");
+      if (!mouseGrabbed) return true;
+
+      const lines = Math.round(wheelLines(e));
+      if (lines === 0) return false;
+
+      if (term.buffer.active.type === "normal") {
+        term.scrollLines(lines);
+        return false;
+      }
+
+      // Alternate buffer: forward the wheel to the app as SGR mouse events so it
+      // scrolls its own view. button 64 = wheel up, 65 = wheel down.
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const { col, row } = wheelCell(e);
+        const button = lines < 0 ? 64 : 65;
+        const count = Math.min(Math.abs(lines), 10);
+        const seq = `\x1b[<${button};${col};${row}M`.repeat(count);
+        wsRef.current.send(JSON.stringify({ type: "input", data: seq }));
+      }
+      return false;
+    });
+
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
