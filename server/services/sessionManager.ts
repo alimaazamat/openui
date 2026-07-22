@@ -286,6 +286,10 @@ export function createSession(params: {
       TERM: "xterm-256color",
       // Pass our session ID so the plugin can include it in status updates
       OPENUI_SESSION_ID: sessionId,
+      // Pass the actual server port so the plugin reports status back to this
+      // instance regardless of which port it runs on (defaults to 6968 to
+      // match server/index.ts). Without this the plugin falls back to 6969.
+      OPENUI_PORT: String(process.env.PORT || 6968),
     },
     rows: 30,
     cols: 120,
